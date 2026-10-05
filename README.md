@@ -7,7 +7,7 @@ Communication is **one-way, Chatzy → Discord**. Nothing from Discord reaches C
 - **Join notices**: new “joined the chat” system messages trigger Discord notices. Visitor-list changes do not trigger notifications.
 - **Explicit relay**: `!relay <text>` in Chatzy posts the text to Discord under the sender's Chatzy name. Nothing else is mirrored.
 - **Chatzy `!` commands**: `!help`, `!joke`, `!relay`.
-- **Connection alerts**: connected, connection lost/restored, and "needs manual attention" are posted to Discord.
+- **Connection alerts**: initial connection and persistent failures are posted to Discord. Brief interruptions recover silently; “restored” is posted only after an announced failure.
 - **Manual browser control**: the bot's Chromium is visible over noVNC, so you can type the room password, deal with VPN checks, or reload by hand. The bot pauses while it waits for you and resumes automatically once it is back in the room.
 
 Design notes are in [`planning/implementation-plan.md`](planning/implementation-plan.md).
@@ -77,8 +77,9 @@ docker compose logs -f
 - Alternatively, set `CHATZY_PASSWORD` and `CHATZY_AUTO_JOIN=true`.
 
 **Recovery:**
-- Short disconnects are handled by reloading, with growing waits between attempts.
-- After `CHATZY_MAX_AUTO_RETRIES` failures, the bot stops retrying, alerts Discord, and waits for you.
+- Short disconnects get a 12-second grace period for Chatzy to reconnect itself.
+- The bot then tries up to `CHATZY_MAX_AUTO_RETRIES` recoveries (default 5), spaced across `CHATZY_RECOVERY_TIMEOUT_MS` (default 120000, two minutes). Only after the continuous outage window and retry budget are exhausted does it alert Discord and wait for you. Slow browser operations can extend this window.
+- Initial manual login still prompts immediately. If a previously connected room requires manual re-entry, the alert waits for the outage window; credentials are never guessed.
 - To retry from scratch, reload the page through noVNC or restart the container (`docker compose restart`).
 - Waiting for an operator does not make the container unhealthy, so Docker will not restart-loop.
 

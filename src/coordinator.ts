@@ -34,6 +34,7 @@ export function createHandlers(
 ): SessionHandlers {
   const registry = buildRegistry(outlet);
   let everConnected = false;
+  let outageAnnounced = false;
 
   return {
     onEvent(ev: ChatzyEvent) {
@@ -46,16 +47,18 @@ export function createHandlers(
     onJoin(user) {
       void outlet.notifyJoin(user);
     },
-    onStateChange(state, prev, reason) {
+    onStateChange(state, _prev, reason) {
       const browser = opts.novncUrl
         ? ` Open the browser: ${opts.novncUrl}`
         : " Open noVNC (port 6080) on the bot server to take control.";
       if (state === "connected") {
-        void outlet.notify(everConnected ? "Chatzy connection restored." : "Chatzy bot is connected to the room.");
+        if (!everConnected || outageAnnounced) {
+          void outlet.notify(everConnected ? "Chatzy connection restored." : "Chatzy bot is connected to the room.");
+        }
         everConnected = true;
-      } else if (state === "disconnected" && prev === "connected") {
-        void outlet.notify(`Chatzy connection lost (${reason ?? "unknown"}). Trying to recover.`);
+        outageAnnounced = false;
       } else if (state === "waiting_for_operator") {
+        outageAnnounced = true;
         void outlet.notify(`Chatzy needs manual attention: ${reason ?? "unknown"}.${browser}`);
       }
     },

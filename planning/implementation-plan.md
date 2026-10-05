@@ -300,9 +300,9 @@ Recovery rules:
 
 - Observe the page, browser process, and `#X7483` connection text.
 - Reload once after a transient disconnect.
-- Retry with increasing delays and jitter after repeated failures.
+- Allow 12 seconds for automatic reconnection, then space five bounded recovery attempts across a two-minute continuous-outage window (configurable). Reset the window on successful connection.
 - Stop automatic retries at a configurable threshold and enter `waiting_for_operator` so Chatzy is not hammered.
-- Notify Discord when operator action becomes necessary and when the session recovers.
+- Notify Discord only when the continuous outage window and retry budget are exhausted; send a recovery notice only if the failure was announced. Initial manual entry prompts immediately; missing credentials after a connection wait for the timeout without attempting guessed credentials.
 - Reset message and presence baselines after reconnecting so history is not reprocessed.
 - On SIGTERM, stop accepting commands, drain the sender briefly, send `/bye` or click Leave Room when connected, and exit within Docker's stop timeout.
 

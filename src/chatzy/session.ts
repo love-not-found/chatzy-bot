@@ -6,6 +6,7 @@ import { createLogger } from "../logger.ts";
 import { classifyPage, onlineFromVisitorList, parseLine } from "./parser.ts";
 import { BINDING_NAME, installObserver, probePage, readVisitorList } from "./page-scripts.ts";
 import { JoinDetector } from "./presence.ts";
+import { RecoveryWindow } from "./recovery.ts";
 import { optionalInRoom, selectors, type SelectorKey } from "./selectors.ts";
 import { SendQueue } from "./sender.ts";
 import type { ChatzyEvent, PageKind, RawLine, SessionState } from "./types.ts";
@@ -15,10 +16,6 @@ const log = createLogger("chatzy");
 const TICK_MS = 3_000;
 const PRESENCE_MS = 15_000;
 const SETTLE_MS = 3_000;
-const DISCONNECTED_GRACE_MS = 30_000;
-const UNKNOWN_GRACE_MS = 60_000;
-const BACKOFF_BASE_MS = 15_000;
-const BACKOFF_MAX_MS = 5 * 60_000;
 
 export interface SessionHandlers {
   /** Every parsed line from the message log (including the bot's own). */
@@ -68,8 +65,7 @@ export class ChatzySession {
   private state: SessionState = "starting";
   private pageKind: PageKind | null = null;
   private failures = 0;
-  private nextActionAt = 0;
-  private notConnectedSince: number | null = null;
+  private readonly recovery: RecoveryWindow;
   private connectedSince: number | null = null;
   private lastEventAt: number | null = null;
   private lastPresenceAt = 0;
@@ -78,6 +74,7 @@ export class ChatzySession {
   private warnedSelectors = "";
   private timer: Timer | null = null;
   private stopping = false;
+  private everConnected = false;
   private lock: Promise<unknown> = Promise.resolve();
 
   readonly joins: JoinDetector;
@@ -88,6 +85,7 @@ export class ChatzySession {
     private readonly handlers: SessionHandlers = {},
   ) {
     this.selfAlias = config.alias;
+    this.recovery = new RecoveryWindow(config.recoveryTimeoutMs, config.maxAutoRetries);
     this.joins = new JoinDetector((n) => this.isSelf(n));
     this.sender = new SendQueue((line) => this.deliver(line), config.sendIntervalMs);
   }
@@ -135,7 +133,7 @@ export class ChatzySession {
     return this.exclusive(async () => {
       log.info("reconnect requested");
       this.failures = 0;
-      this.nextActionAt = 0;
+      this.recovery.reset();
       this.setState("reconnecting", "manual reconnect");
       if (!this.context) await this.launch();
       await this.navigate();
@@ -224,21 +222,22 @@ export class ChatzySession {
       .catch((e) => log.warn("navigation failed", { error: e }));
   }
 
-  private scheduleBackoff(): void {
-    const delay = Math.min(BACKOFF_BASE_MS * 2 ** Math.max(0, this.failures - 1), BACKOFF_MAX_MS);
-    this.nextActionAt = Date.now() + delay + Math.random() * 5_000;
-  }
-
   private async tick(): Promise<void> {
     if (this.stopping) return;
     const now = Date.now();
     this.lastTickAt = now;
 
     if (!this.context) {
-      if (now < this.nextActionAt) return;
+      this.recovery.start(now);
+      if (this.state === "waiting_for_operator") return;
+      if (this.recovery.failed(now)) {
+        this.setState("waiting_for_operator", "browser recovery exhausted the retry window");
+        return;
+      }
+      if (!this.recovery.takeRetry(now)) return;
       this.setState("reconnecting", "browser not running");
-      this.failures++;
-      this.scheduleBackoff();
+      this.failures = this.recovery.attempts;
+      log.info("recovery attempt", { attempt: this.failures, maxRetries: this.config.maxAutoRetries, action: "relaunch browser" });
       try {
         await this.launch();
         await this.navigate();
@@ -259,7 +258,11 @@ export class ChatzySession {
 
     const probe = await page.evaluate(probePage, selectors).catch(() => null);
     const kind: PageKind = probe ? classifyPage(probe) : "unknown";
-    if (kind !== this.pageKind) log.debug("page kind", { kind, url: probe?.url });
+    if (kind !== this.pageKind) log.info("page kind", {
+      kind, statusText: probe?.statusText ?? null,
+      messageLogFound: probe?.found.messageLog ?? false,
+      messageInputFound: probe?.found.messageInput ?? false,
+    });
     this.pageKind = kind;
 
     if (kind === "room-connected" && probe) {
@@ -281,8 +284,9 @@ export class ChatzySession {
           }
         }
       }
-      this.notConnectedSince = null;
+      this.recovery.reset();
       if (this.state !== "connected") {
+        this.everConnected = true;
         this.failures = 0;
         this.connectedSince = now;
         this.setState("connected");
@@ -296,36 +300,33 @@ export class ChatzySession {
       this.connectedSince = null;
       this.setState("disconnected", kind === "entry" ? "returned to entry page" : `page is ${kind}`);
     }
-    this.notConnectedSince ??= now;
+    this.recovery.start(now);
     if (this.state === "waiting_for_operator") return; // hands off until the room is back
+    if (this.recovery.failed(now)) {
+      this.setState("waiting_for_operator", `Chatzy has not recovered after ${Math.round(this.config.recoveryTimeoutMs / 1000)} seconds and ${this.failures} retries`);
+      return;
+    }
 
     if (kind === "entry") {
       if (!this.config.autoJoin) {
+        if (this.everConnected && !this.recovery.timedOut(now)) return;
         this.setState("waiting_for_operator", "auto-join is off, please enter the room manually");
         return;
       }
-      if (this.failures >= this.config.maxAutoRetries) {
-        this.setState("waiting_for_operator", `automatic room entry failed ${this.failures} times`);
-        return;
-      }
-      if (now < this.nextActionAt) return;
+      if (!this.recovery.takeRetry(now)) return;
       this.setState("joining");
-      this.failures++;
-      this.scheduleBackoff();
+      this.failures = this.recovery.attempts;
+      log.info("recovery attempt", { attempt: this.failures, maxRetries: this.config.maxAutoRetries, action: "join room" });
       if (!(await this.tryAutoJoin(page))) {
+        if (this.everConnected && !this.recovery.timedOut(now)) return;
         this.setState("waiting_for_operator", "room asks for a password but CHATZY_PASSWORD is not set");
       }
       return;
     }
 
-    const grace = kind === "room-disconnected" ? DISCONNECTED_GRACE_MS : UNKNOWN_GRACE_MS;
-    if (now - this.notConnectedSince < grace || now < this.nextActionAt) return;
-    if (this.failures >= this.config.maxAutoRetries) {
-      this.setState("waiting_for_operator", `automatic recovery failed ${this.failures} times`);
-      return;
-    }
-    this.failures++;
-    this.scheduleBackoff();
+    if (!this.recovery.takeRetry(now)) return;
+    this.failures = this.recovery.attempts;
+    log.info("recovery attempt", { attempt: this.failures, maxRetries: this.config.maxAutoRetries, action: "reload room" });
     this.setState("reconnecting", `page is ${kind}`);
     const sameRoom = !!probe && isChatzyUrl(probe.url) && roomPath(probe.url) === roomPath(this.config.roomUrl);
     if (sameRoom) await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});

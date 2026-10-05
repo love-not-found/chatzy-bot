@@ -27,6 +27,7 @@ const chatzySchema = z.object({
   CHATZY_AUTO_JOIN: bool(false),
   CHATZY_SEND_INTERVAL_MS: int(1200),
   CHATZY_MAX_AUTO_RETRIES: int(5),
+  CHATZY_RECOVERY_TIMEOUT_MS: int(120_000).pipe(z.number().positive()),
   DATA_DIR: z.string().default("./data"),
   NOVNC_PUBLIC_URL: optionalString,
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -50,6 +51,7 @@ export interface ChatzyConfig {
   autoJoin: boolean;
   sendIntervalMs: number;
   maxAutoRetries: number;
+  recoveryTimeoutMs: number;
   dataDir: string;
   profileDir: string;
   novncUrl?: string;
@@ -83,6 +85,7 @@ export function loadChatzyConfig(env: Record<string, string | undefined> = proce
     autoJoin: e.CHATZY_AUTO_JOIN,
     sendIntervalMs: e.CHATZY_SEND_INTERVAL_MS,
     maxAutoRetries: e.CHATZY_MAX_AUTO_RETRIES,
+    recoveryTimeoutMs: e.CHATZY_RECOVERY_TIMEOUT_MS,
     dataDir,
     profileDir: path.join(dataDir, "browser-profile"),
     novncUrl: e.NOVNC_PUBLIC_URL,
