@@ -1,10 +1,7 @@
 /**
- * Combines two join signals into one deduplicated stream:
- *  - Chatzy "X joined the chat" system lines (fast, primary)
- *  - visitor-list snapshot diffs (fallback if a line is missed)
- *
- * The first snapshot after (re)connecting only establishes a baseline and
- * never produces notifications.
+ * Only live Chatzy "X joined the chat" system lines trigger notifications.
+ * Visitor-list snapshots update online presence silently; list changes are
+ * unreliable evidence of an actual join.
  */
 export class JoinDetector {
   private online = new Set<string>();
@@ -40,20 +37,13 @@ export class JoinDetector {
     this.online.delete(name);
   }
 
-  /** Returns names that should be announced as newly joined. */
-  onSnapshot(names: string[], now = Date.now()): string[] {
+  /** Refresh online presence without generating or suppressing join notifications. */
+  onSnapshot(names: string[]): void {
     // The bot is always in its own room's visitor list. A list without it is
     // still loading (or broken) and must not become a baseline.
-    if (!names.some((n) => this.isSelf(n))) return [];
-    const next = new Set(names);
-    if (!this.hasBaseline) {
-      this.online = next;
-      this.hasBaseline = true;
-      return [];
-    }
-    const joined = names.filter((n) => !this.online.has(n) && this.claim(n, now));
-    this.online = next;
-    return joined;
+    if (!names.some((n) => this.isSelf(n))) return;
+    this.online = new Set(names);
+    this.hasBaseline = true;
   }
 
   private claim(name: string, now: number): boolean {

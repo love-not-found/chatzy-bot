@@ -363,10 +363,7 @@ export class ChatzySession {
     this.lastPresenceAt = Date.now();
     const entries = await page.evaluate(readVisitorList, selectors.visitorList).catch(() => null);
     if (!entries) return;
-    for (const name of this.joins.onSnapshot(onlineFromVisitorList(entries))) {
-      log.info("join (visitor list)", { user: name });
-      this.handlers.onJoin?.(name);
-    }
+    this.joins.onSnapshot(onlineFromVisitorList(entries));
   }
 
   private onRawLine(line: RawLine): void {

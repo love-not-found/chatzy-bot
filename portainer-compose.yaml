@@ -1,0 +1,39 @@
+# Portainer Docker Standalone stack.
+# Upload .env under the stack's Environment variables section before deploying.
+# Variables are passed explicitly: no env_file on the Portainer server is needed.
+services:
+  chatzy-bot:
+    image: ghcr.io/love-not-found/chatzy-bot:latest
+    restart: unless-stopped
+    environment:
+      DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL}"
+      DISCORD_NOTIFY_WEBHOOK_URL: "${DISCORD_NOTIFY_WEBHOOK_URL:-}"
+      DISCORD_WEBHOOK_NAME: "${DISCORD_WEBHOOK_NAME:-Chatzy Bot}"
+      CHATZY_ROOM_URL: "${CHATZY_ROOM_URL}"
+      CHATZY_ALIAS: "${CHATZY_ALIAS:-Room Bot}"
+      CHATZY_PASSWORD: "${CHATZY_PASSWORD:-}"
+      CHATZY_AUTO_JOIN: "${CHATZY_AUTO_JOIN:-false}"
+      CHATZY_SEND_INTERVAL_MS: "${CHATZY_SEND_INTERVAL_MS:-1200}"
+      CHATZY_MAX_AUTO_RETRIES: "${CHATZY_MAX_AUTO_RETRIES:-5}"
+      VNC_PASSWORD: "${VNC_PASSWORD:-}"
+      NOVNC_PUBLIC_URL: "${NOVNC_PUBLIC_URL:-}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      # Keep these internal paths/ports fixed, regardless of local .env values.
+      DATA_DIR: /data
+      HEALTH_PORT: "8080"
+    volumes:
+      - browser-data:/data
+    ports:
+      # Set NOVNC_BIND to the Docker host's LAN/VPN IP for remote access.
+      - "${NOVNC_BIND:-127.0.0.1}:6080:6080"
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8080').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+    stop_grace_period: 30s
+
+volumes:
+  browser-data:

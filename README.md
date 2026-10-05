@@ -4,7 +4,7 @@ A self-hosted bot that sits in a private [Chatzy](https://www.chatzy.com) room t
 
 Communication is **one-way, Chatzy → Discord**. Nothing from Discord reaches Chatzy, and there are no Discord slash commands.
 
-- **Join notices**: when someone enters the Chatzy room, a notice is posted to Discord.
+- **Join notices**: new “joined the chat” system messages trigger Discord notices. Visitor-list changes do not trigger notifications.
 - **Explicit relay**: `!relay <text>` in Chatzy posts the text to Discord under the sender's Chatzy name. Nothing else is mirrored.
 - **Chatzy `!` commands**: `!help`, `!joke`, `!relay`.
 - **Connection alerts**: connected, connection lost/restored, and "needs manual attention" are posted to Discord.
@@ -83,6 +83,17 @@ docker compose logs -f
 - Waiting for an operator does not make the container unhealthy, so Docker will not restart-loop.
 
 **Stopping:** `docker compose stop` gives the bot 30s to send `/bye` and close the browser.
+
+## Portainer deployment
+
+Use [`portainer-compose.yaml`](portainer-compose.yaml) for a **Docker Standalone** stack:
+
+1. Open **Stacks → Add stack** and paste the file into the web editor, or deploy from this repository with the Compose path set to `portainer-compose.yaml`.
+2. Under **Environment variables**, use **Load variables from .env file** to upload your configured `.env`, or enter the values individually. The Compose file passes them explicitly into the container; it does not require an `.env` file on the server.
+3. Set `DISCORD_WEBHOOK_URL` and `CHATZY_ROOM_URL`. For browser access, also set `VNC_PASSWORD`, `NOVNC_BIND` to the Docker host's LAN/VPN IP, and `NOVNC_PUBLIC_URL` to `http://<that-ip>:6080/vnc.html`.
+4. Deploy the stack. If the GHCR image is private, configure GHCR credentials in Portainer's **Registries** first.
+
+The stack stores the browser profile in a Docker-managed named volume, retained across container updates. `DATA_DIR` and `HEALTH_PORT` are fixed internally to `/data` and `8080`; local values for these are ignored. To refresh the image, use Portainer's stack update with the option to re-pull the image enabled.
 
 ## Security
 

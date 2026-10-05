@@ -61,8 +61,8 @@ Notification rules:
 - Do not notify for the bot's own alias.
 - Do not announce everyone already present when the bot starts or reconnects.
 - Use Chatzy's `joined the chat` system line as the primary event source.
-- Compare online-presence snapshots as a fallback if a system line is missed.
-- Deduplicate primary and fallback events for the same user within a short time window.
+- Only new chat system lines trigger join notifications; visitor-list changes never do.
+- Deduplicate repeated chat join events for the same user within a short time window.
 - Optionally report leaves later; only joins are required for the first release.
 
 ## 3. Why Browser Automation
@@ -251,7 +251,7 @@ All outgoing Chatzy messages pass through one queue:
 Take an initial snapshot of online visitors without generating notifications. Then:
 
 - Parse `p.b` system events immediately for low-latency joins.
-- Poll the visitor list periodically as a reliability fallback.
+- Poll the visitor list periodically only to refresh online presence, never to infer joins.
 - Normalize names without altering visible punctuation, spaces, or case.
 - Deduplicate `{event type, full name}` for a configurable time window.
 

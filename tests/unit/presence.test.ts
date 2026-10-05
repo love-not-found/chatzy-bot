@@ -4,53 +4,51 @@ import { JoinDetector } from "../../src/chatzy/presence.ts";
 const SELF = "Room Bot";
 const make = () => new JoinDetector((n) => n === SELF, 60_000);
 
-test("first snapshot is a silent baseline", () => {
+test("visitor-list changes only refresh presence, never produce join notifications", () => {
   const d = make();
-  expect(d.onSnapshot([SELF, "a", "b"], 0)).toEqual([]);
-  expect(d.onSnapshot([SELF, "a", "b", "c"], 1000)).toEqual(["c"]);
+  expect(d.onSnapshot([SELF, "a"])).toBeUndefined();
+  expect(d.onSnapshot([SELF, "a", "b"])).toBeUndefined();
+  expect(d.onlineUsers).toEqual([SELF, "a", "b"]);
+  // List refresh must not claim a notification or suppress a subsequent chat join.
+  expect(d.onJoinLine("b", 1000)).toBe(true);
 });
 
 test("a list without the bot is still loading and is ignored", () => {
   const d = make();
-  expect(d.onSnapshot([], 0)).toEqual([]);
+  d.onSnapshot([]);
   expect(d.ready).toBe(false);
-  expect(d.onSnapshot([SELF, "a"], 1000)).toEqual([]);
+  d.onSnapshot([SELF, "a"]);
   expect(d.ready).toBe(true);
-  expect(d.onSnapshot(["a", "b"], 2000)).toEqual([]);
-  expect(d.onSnapshot([SELF, "a", "b"], 3000)).toEqual(["b"]);
+  d.onSnapshot(["a", "b"]);
+  expect(d.onlineUsers).toEqual([SELF, "a"]);
 });
 
-test("join line and later snapshot are deduplicated", () => {
+test("repeated chat join lines are deduplicated even after a list refresh", () => {
   const d = make();
-  d.onSnapshot([SELF, "a"], 0);
   expect(d.onJoinLine("b", 1000)).toBe(true);
-  expect(d.onSnapshot([SELF, "a", "b"], 5000)).toEqual([]);
-});
-
-test("snapshot first, then join line, is deduplicated", () => {
-  const d = make();
-  d.onSnapshot([SELF], 0);
-  expect(d.onSnapshot([SELF, "b"], 1000)).toEqual(["b"]);
+  d.onSnapshot([SELF, "b"]);
   expect(d.onJoinLine("b", 2000)).toBe(false);
 });
 
 test("rejoin after the window notifies again", () => {
   const d = make();
-  d.onSnapshot([SELF], 0);
   expect(d.onJoinLine("b", 1000)).toBe(true);
   d.onLeaveLine("b");
   expect(d.onJoinLine("b", 120_000)).toBe(true);
 });
 
 test("own alias never notifies", () => {
-  const d = make();
-  d.onSnapshot([SELF], 0);
-  expect(d.onJoinLine(SELF, 1000)).toBe(false);
+  expect(make().onJoinLine(SELF, 1000)).toBe(false);
 });
 
-test("reset makes the next snapshot a baseline again", () => {
+test("reset clears presence without clearing recent join deduplication", () => {
   const d = make();
-  d.onSnapshot([SELF, "a"], 0);
+  d.onSnapshot([SELF, "a"]);
+  d.onJoinLine("b", 1000);
   d.reset();
-  expect(d.onSnapshot([SELF, "a", "x", "y"], 1000)).toEqual([]);
+  expect(d.ready).toBe(false);
+  expect(d.onlineUsers).toEqual([]);
+  d.onSnapshot([SELF, "a", "x", "y"]);
+  expect(d.onlineUsers).toEqual([SELF, "a", "x", "y"]);
+  expect(d.onJoinLine("b", 2000)).toBe(false);
 });
