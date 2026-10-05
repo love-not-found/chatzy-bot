@@ -53,6 +53,8 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
+**Prebuilt image:** run the *Docker image* workflow from the GitHub Actions tab (*Run workflow*). It runs the tests, then pushes `ghcr.io/love-not-found/chatzy-bot:latest` plus a commit-SHA tag and an optional custom tag. To use it, replace `build: .` in `docker-compose.yml` with `image: ghcr.io/love-not-found/chatzy-bot:latest` and run `docker compose pull && docker compose up -d`. If the package is private, first run `docker login ghcr.io` with a token that has `read:packages`.
+
 **Manual control:** open `http://<NOVNC_BIND>:6080/vnc.html` and log in with `VNC_PASSWORD` (max 8 characters).
 
 **Keep noVNC private:** bind it to a LAN or Tailscale address, or keep `127.0.0.1` and use `ssh -L 6080:localhost:6080 server`. Never expose it to the internet.
