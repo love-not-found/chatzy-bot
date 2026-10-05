@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- Sanitized, hand-written reduction of a captured Chatzy room page. No account data. -->
+<html>
+  <head><title>Chatzy: test room</title></head>
+  <body>
+    <a href="#" id="X7397" title="Leave the room with the predefined goodbye message (/bye)">Leave Room</a>
+    <table>
+      <tbody>
+        <tr>
+          <td id="X2803" style="vertical-align: bottom">
+            <p class="b"><b class="X7409">nora</b> started the chat 69 seconds ago</p>
+            <p class="b"><b class="X7409">Amour (26)</b> joined the chat </p>
+            <p class="a"><b class="X7409">Amour (26)</b>: hi</p>
+            <p class="a"><b class="X7409">Amour (26)</b>: !joke</p>
+          </td>
+          <td>
+            <div id="X5592">
+              <h3 class="X7768"><img src="/elements/icon17/visitors.png" alt="" />1 Online</h3>
+              <p title="Amour (26)"><img src="/elements/icon16/visitor/A1.gif" alt="" /><nobr>Amour (26)</nobr></p>
+              <div>&nbsp;</div>
+              <p class="X9060" title="nora"><img src="/elements/icon16/visitor/L1.gif" alt="" /><nobr>nora</nobr></p>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div id="X7483">Connected</div>
+    <form id="X5031" onsubmit="return false">
+      <a href="#" id="X6807" title="Click to change your alias, color, etc."><b>Room Bot</b>:</a>
+      <input type="text" id="X9225" maxlength="4000" />
+    </form>
+    <script>
+      // Emulate Chatzy: Enter in the input appends our own chat line.
+      document.getElementById("X9225").addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        const p = document.createElement("p");
+        p.className = "a";
+        p.innerHTML = '<b class="X7409">Room Bot</b>: ';
+        p.append(document.createTextNode(e.target.value));
+        document.getElementById("X2803").append(p);
+        e.target.value = "";
+      });
+    </script>
+  </body>
+</html>

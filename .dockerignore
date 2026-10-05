@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+node_modules
+data
+planning
+tests
+coverage
+result
+*.md

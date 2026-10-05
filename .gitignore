@@ -12,3 +12,6 @@ planning/*.har
 planning/room.html
 planning/ws-frame.txt
 planning/ws-frames.txt
+
+# nix build output
+result

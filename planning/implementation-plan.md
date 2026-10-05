@@ -91,12 +91,22 @@ The supplied in-room HTML currently exposes these hooks:
 | Message form | `form#X5031` | Submitting sends the current message |
 | Message input | `input#X9225` | Maximum length is currently 4000 |
 | Visitor list | `#X5592` | Online users precede a divider; recent offline users follow it |
-| Connection state | `#X7483` | Displays `Connected` while healthy |
+| Connection state | `#X7483` | Shows `Connected`, then `Updated N seconds ago`; both mean healthy |
 | Leave action | `#X7397` | Sends Chatzy's predefined `/bye` behavior |
+| Quick Chat entry form | `form#X8823` | Alias `#X8712`, color `#X1711`, submit `#X6668`; no password field |
 
 The `X...` identifiers are generated-looking and must not be scattered through the code. They will live in one selector module. Each important operation will also have a structural fallback, such as `input[maxlength="4000"]`, and startup validation will report selector failures to Discord.
 
-The password-room entry form has not yet been captured. Its selectors should be inspected during implementation, while the manual-control browser remains a valid fallback.
+Findings from live testing against the test room (Phase 1–4):
+
+- The IDs were identical across fresh browser sessions, so they are build-level, not per-session.
+- `us28.chatzy.com/<room>` redirects to `www.chatzy.com/<room>` for the entry page and back to `us28` after joining. Host checks accept any `*.chatzy.com` host and compare only the room path.
+- `#X7483` changes from `Connected` to `Updated 30 seconds ago` after a while. Only explicit failure wording (disconnect, reconnect, lost, error, ...) is treated as disconnected.
+- The visitor list is briefly empty right after joining. A snapshot only becomes the join baseline once it contains the bot itself, which prevents false join notices for people already present.
+- The bot's own `/bye` appears as `<alias> left the chat`, confirming the leave-line format.
+- Playwright launches Chromium with `--no-sandbox` by default (`chromiumSandbox: false`). The container relies on container isolation and a non-root user instead of Chromium's sandbox.
+
+The Premium-room password form has still not been captured. Auto-join fills the first visible `input[type=password]` and the text input in the same form, then submits. If that fails, or `CHATZY_PASSWORD` is unset, the bot waits for the operator over noVNC.
 
 ## 5. Architecture
 
@@ -125,9 +135,10 @@ Discord adapter ---- command/permission service
 
 Recommended runtime stack:
 
-- Node.js with TypeScript.
+- Bun as runtime, package manager, TypeScript executor, and test runner (`bun test`). No separate Node.js, npm, `tsc` build step, or Vitest is required; Bun runs `.ts` files directly.
 - `discord.js` v14 for the Discord gateway and slash commands.
-- Playwright for Chromium automation.
+- Playwright for Chromium automation. The `playwright` npm package version is pinned exactly to the version of `playwright-driver` in the locked nixpkgs (currently 1.63.0) so the Nix-provided browsers are used in development.
+- A Nix flake (`flake.nix`) provides the development shell: Bun, Playwright browsers via `PLAYWRIGHT_BROWSERS_PATH`, Xvfb, and x11vnc. Enter it with `nix develop` (or direnv `use flake`).
 - Xvfb as Chromium's virtual display.
 - x11vnc plus noVNC/websockify for manual browser access.
 - Structured logging, initially to standard output for Docker collection.
@@ -182,6 +193,11 @@ tests/
 Dockerfile
 docker-compose.yml
 .env.example
+flake.nix
+flake.lock
+package.json
+bun.lock
+tsconfig.json
 ```
 
 ## 7. Chatzy Browser Adapter
@@ -232,7 +248,7 @@ type ChatzyEvent =
   | { type: "system"; text: string };
 ```
 
-The browser-side observer should pass plain serializable values into Node through a Playwright-exposed callback. The Node side owns command dispatch, notification logic, and Discord calls.
+The browser-side observer should pass plain serializable values into the Bun process through a Playwright-exposed callback. The Bun side owns command dispatch, notification logic, and Discord calls.
 
 At watcher startup, parse existing lines only to establish state. Do not execute historical `!` commands and do not emit historical join notifications. Process only mutations that occur after initialization.
 
@@ -355,7 +371,9 @@ LOG_LEVEL=info
 
 ## 11. Container Design
 
-Use the official Playwright image matching the installed Playwright version. The image includes compatible browser libraries. Add only the Xvfb/VNC/noVNC components needed for the interactive display.
+Use the official `oven/bun` Debian image. Install Chromium and its system libraries with `bunx playwright@<pinned version> install --with-deps chromium` so the browser build matches the pinned package. Add only the Xvfb/VNC/noVNC components needed for the interactive display. Dependencies are installed with `bun install --frozen-lockfile --production` from the committed `bun.lock`.
+
+Bun compatibility note: Playwright and discord.js are both Node-targeted libraries. Bun's Node compatibility covers them, but Playwright launching Chromium under Bun is the riskiest part of the stack and is verified first in Phase 1. If a blocking incompatibility appears, the fallback is to keep Bun as package manager/test runner and run the bot entrypoint with Node; no application code needs to change for that.
 
 The compose service should provide:
 
@@ -364,7 +382,7 @@ The compose service should provide:
 - An `.env` file or secret injection.
 - A noVNC port bound only to a private address.
 - `shm_size` large enough for stable Chromium operation.
-- A health check that verifies the Node process and reports browser state; Docker should not restart merely because human password entry is required.
+- A health check that verifies the Bun process and reports browser state; Docker should not restart merely because human password entry is required.
 - Graceful-stop time long enough to leave the Chatzy room cleanly.
 
 Run the application and browser as a non-root user. Avoid `--no-sandbox` unless the deployment environment makes Chromium's sandbox impossible and the risk is explicitly accepted.
@@ -407,7 +425,8 @@ Using the supplied test room and then the Premium room:
 
 ### Phase 1: Foundation and browser control
 
-- Initialize TypeScript, linting, tests, and configuration validation.
+- Add the Nix flake dev shell and initialize the Bun project (`package.json`, `bun.lock`, `tsconfig.json` for editor/type checking via `bunx tsc --noEmit`), `bun test`, and configuration validation.
+- Verify Playwright can launch persistent headed Chromium under Bun before building further.
 - Add the Playwright/Xvfb/noVNC container runtime.
 - Launch persistent headed Chromium and verify manual control.
 - Implement page-state detection and selector validation.

@@ -1,0 +1,24 @@
+services:
+  chatzy-bot:
+    build: .
+    image: chatzy-bot:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      # Browser profile (cookies/login) survives restarts. Must be writable by uid 1000.
+      - ./data:/data
+    ports:
+      # noVNC for manual browser control. Keep it private: LAN/VPN address or 127.0.0.1 + SSH tunnel.
+      - "${NOVNC_BIND:-127.0.0.1}:6080:6080"
+    shm_size: 1gb
+    # Duplicated from the Dockerfile because Podman's OCI image format drops HEALTHCHECK.
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8080').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+    # Time to send /bye and close the browser before being killed.
+    stop_grace_period: 30s
