@@ -46,18 +46,24 @@ Status is available at `http://127.0.0.1:8080/` (Chatzy state, online count, las
 2. Copy the webhook URL into `DISCORD_WEBHOOK_URL`.
 3. Optionally, create a second webhook in another channel and set it as `DISCORD_NOTIFY_WEBHOOK_URL`. Join notices and alerts then go there, and relays stay in the first channel.
 
-Relayed text is shown literally: Markdown is escaped, links still work, and mentions (`@everyone`, roles, users) never ping. The webhook token is redacted from logs.
+Relayed text keeps inline formatting (bold, italic, strike, spoilers, code) and links. Mentions (`@everyone`, roles, users) never ping or show as highlights, and hidden links like `[text](url)` and headings, quotes and lists are shown as plain text. The webhook token is redacted from logs.
 
 ## Deployment (Docker / Podman)
 
 ```sh
 cp .env.example .env    # fill in, set VNC_PASSWORD and NOVNC_BIND
 mkdir -p data           # must be writable by uid 1000
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose logs -f
 ```
 
-**Prebuilt image:** run the *Docker image* workflow from the GitHub Actions tab (*Run workflow*). It runs the tests, then pushes `ghcr.io/love-not-found/chatzy-bot:latest` plus a commit-SHA tag and an optional custom tag. To use it, replace `build: .` in `docker-compose.yml` with `image: ghcr.io/love-not-found/chatzy-bot:latest` and run `docker compose pull && docker compose up -d`. If the package is private, first run `docker login ghcr.io` with a token that has `read:packages`.
+**Image:** `docker-compose.yml` uses the prebuilt `ghcr.io/love-not-found/chatzy-bot:latest`.
+- The image is built by the *Docker image* workflow. Start it from the GitHub Actions tab with *Run workflow*.
+- The workflow runs the tests, then pushes `latest`, a commit-SHA tag, and an optional custom tag.
+- To update the server, run `docker compose pull && docker compose up -d`.
+- If the package is private, first run `docker login ghcr.io` with a token that has `read:packages`.
+- To build from source instead, uncomment `build: .` in `docker-compose.yml` and run `docker compose up -d --build`.
 
 **Manual control:** open `http://<NOVNC_BIND>:6080/vnc.html` and log in with `VNC_PASSWORD` (max 8 characters).
 

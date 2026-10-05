@@ -1,7 +1,10 @@
 services:
   chatzy-bot:
-    build: .
-    image: chatzy-bot:latest
+    # Prebuilt image from https://github.com/love-not-found/chatzy-bot
+    # (built by the "Docker image" GitHub Actions workflow).
+    image: ghcr.io/love-not-found/chatzy-bot:latest
+    # To build from source instead, uncomment and run `docker compose up -d --build`.
+    # build: .
     restart: unless-stopped
     env_file: .env
     environment:
