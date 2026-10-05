@@ -1,5 +1,3 @@
-import { escapeMarkdown } from "discord.js";
-
 /** Chatzy's input has maxlength=4000; stay below it. */
 export const CHATZY_MAX_LEN = 3900;
 
@@ -26,9 +24,50 @@ export function splitMessage(text: string, max = CHATZY_MAX_LEN): string[] {
   return chunks;
 }
 
-/** Escape Discord markdown so Chatzy text renders literally. Mentions are disabled separately via allowedMentions. */
+const URL_RE = /https?:\/\/[^\s<>]+/g;
+const MD_RE = /[\\*_~`|>#\-\[\]()<:]/g;
+const ZWSP = "\u200b";
+
+/** Apply `fn` to the text between URLs; URLs stay untouched so Discord still links/embeds them. */
+function outsideUrls(text: string, fn: (s: string) => string): string {
+  let out = "";
+  let last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    out += fn(text.slice(last, m.index)) + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + fn(text.slice(last));
+}
+
+/**
+ * Stop "@everyone", "@here" and "@name" from rendering as highlighted mention
+ * pills. (allowed_mentions already prevents actual pings.)
+ */
+function breakMentions(s: string): string {
+  return s.replace(/@(?=\S)/g, `@${ZWSP}`);
+}
+
+/**
+ * Escape all Discord markdown so text renders literally. Used for names and
+ * other text that must never be formatted.
+ */
 export function escapeDiscord(text: string): string {
-  return escapeMarkdown(text, { heading: true, bulletedList: true, numberedList: true, maskedLink: true });
+  return outsideUrls(text, (s) => breakMentions(s.replace(MD_RE, "\\$&")));
+}
+
+/**
+ * Format a relayed Chatzy message for Discord. Inline formatting
+ * (**bold**, *italic*, __underline__, ~~strike~~, ||spoiler||, `code`) renders
+ * as Discord users expect. Disabled: mention pills, <@id>/<#id>/<t:..> tags,
+ * masked links ([text](url)) that could disguise a URL, and block formatting
+ * (# headings, -# subtext, > quotes, lists) that would distort the layout.
+ */
+export function formatRelay(text: string): string {
+  const body = outsideUrls(text, (s) =>
+    breakMentions(s.replace(/</g, "\\<").replace(/\[/g, "\\[")),
+  );
+  // Chatzy lines are single-line, so block syntax can only occur at the start.
+  return body.replace(/^(\s*)(#|-#|>|[-*+](?=\s)|\d+[.)](?=\s))/, (_m, sp: string, tok: string) => sp + "\\" + tok);
 }
 
 export function truncate(text: string, max: number): string {

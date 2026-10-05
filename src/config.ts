@@ -1,16 +1,6 @@
 import { z } from "zod";
 import path from "node:path";
-
-const idList = z
-  .string()
-  .optional()
-  .transform((v) =>
-    (v ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-  )
-  .pipe(z.array(z.string().regex(/^\d+$/, "must be a numeric Discord ID")));
+import { WEBHOOK_URL_RE } from "./discord/webhook.ts";
 
 const bool = (def: boolean) =>
   z
@@ -43,15 +33,14 @@ const chatzySchema = z.object({
   HEALTH_PORT: int(8080),
 });
 
+const webhookUrl = z
+  .string()
+  .regex(WEBHOOK_URL_RE, "must be a Discord webhook URL (https://discord.com/api/webhooks/<id>/<token>)");
+
 const discordSchema = z.object({
-  DISCORD_TOKEN: z.string().min(1),
-  DISCORD_GUILD_ID: z.string().regex(/^\d+$/),
-  DISCORD_RELAY_CHANNEL_ID: z.string().regex(/^\d+$/),
-  DISCORD_NOTIFICATION_CHANNEL_ID: z.string().regex(/^\d+$/),
-  DISCORD_ADMIN_USER_IDS: idList,
-  DISCORD_ADMIN_ROLE_IDS: idList,
-  DISCORD_RELAY_USER_IDS: idList,
-  DISCORD_RELAY_ROLE_IDS: idList,
+  DISCORD_WEBHOOK_URL: webhookUrl,
+  DISCORD_NOTIFY_WEBHOOK_URL: z.union([z.literal(""), webhookUrl]).optional(),
+  DISCORD_WEBHOOK_NAME: z.string().min(1).max(80).default("Chatzy Bot"),
 });
 
 export interface ChatzyConfig {
@@ -69,14 +58,12 @@ export interface ChatzyConfig {
 }
 
 export interface DiscordConfig {
-  token: string;
-  guildId: string;
-  relayChannelId: string;
-  notificationChannelId: string;
-  adminUserIds: string[];
-  adminRoleIds: string[];
-  relayUserIds: string[];
-  relayRoleIds: string[];
+  /** Receives !relay messages. */
+  relayWebhookUrl: string;
+  /** Receives join notices and connection alerts (defaults to the relay webhook). */
+  notifyWebhookUrl: string;
+  /** Display name for notices. */
+  webhookName: string;
 }
 
 function formatError(prefix: string, err: z.ZodError): Error {
@@ -109,13 +96,8 @@ export function loadDiscordConfig(env: Record<string, string | undefined> = proc
   if (!r.success) throw formatError("Invalid Discord configuration:", r.error);
   const e = r.data;
   return {
-    token: e.DISCORD_TOKEN,
-    guildId: e.DISCORD_GUILD_ID,
-    relayChannelId: e.DISCORD_RELAY_CHANNEL_ID,
-    notificationChannelId: e.DISCORD_NOTIFICATION_CHANNEL_ID,
-    adminUserIds: e.DISCORD_ADMIN_USER_IDS,
-    adminRoleIds: e.DISCORD_ADMIN_ROLE_IDS,
-    relayUserIds: e.DISCORD_RELAY_USER_IDS,
-    relayRoleIds: e.DISCORD_RELAY_ROLE_IDS,
+    relayWebhookUrl: e.DISCORD_WEBHOOK_URL,
+    notifyWebhookUrl: e.DISCORD_NOTIFY_WEBHOOK_URL || e.DISCORD_WEBHOOK_URL,
+    webhookName: e.DISCORD_WEBHOOK_NAME,
   };
 }

@@ -1,11 +1,13 @@
 # chatzy-bot
 
-A self-hosted bot that sits in a private [Chatzy](https://www.chatzy.com) room through a real Chromium browser and connects it to Discord.
+A self-hosted bot that sits in a private [Chatzy](https://www.chatzy.com) room through a real Chromium browser and posts to Discord through a webhook.
+
+Communication is **one-way, Chatzy → Discord**. Nothing from Discord reaches Chatzy, and there are no Discord slash commands.
 
 - **Join notices**: when someone enters the Chatzy room, a notice is posted to Discord.
-- **Explicit relay**: `!relay <text>` in Chatzy posts to Discord; `/relay` in Discord posts to Chatzy. Nothing else is mirrored.
+- **Explicit relay**: `!relay <text>` in Chatzy posts the text to Discord under the sender's Chatzy name. Nothing else is mirrored.
 - **Chatzy `!` commands**: `!help`, `!joke`, `!relay`.
-- **Discord slash commands**: `/relay`, `/status`, `/who`, `/reload`, `/reconnect`, `/browser`.
+- **Connection alerts**: connected, connection lost/restored, and "needs manual attention" are posted to Discord.
 - **Manual browser control**: the bot's Chromium is visible over noVNC, so you can type the room password, deal with VPN checks, or reload by hand. The bot pauses while it waits for you and resumes automatically once it is back in the room.
 
 Design notes are in [`planning/implementation-plan.md`](planning/implementation-plan.md).
@@ -32,17 +34,19 @@ A Chromium window opens on your desktop. Room events are printed, `!joke`/`!help
 ### Run the full bot locally
 
 ```sh
-cp .env.example .env   # fill in the Discord and Chatzy values
-bun run start
+cp .env.example .env   # fill in the webhook URL and Chatzy values
+bun run start          # Bun loads .env automatically
 ```
+
+Status is available at `http://127.0.0.1:8080/` (Chatzy state, online count, last webhook error).
 
 ## Discord setup
 
-1. Create an application at <https://discord.com/developers/applications>, add a bot, and copy its token into `DISCORD_TOKEN`.
-2. Invite it with the `bot` and `applications.commands` scopes and the *View Channel*, *Send Messages* permissions on the relay/notification channels.
-3. Enable Developer Mode in Discord and copy the server ID and the channel IDs into `.env`.
+1. In Discord, open the channel's settings, then *Integrations* > *Webhooks* > *New Webhook*.
+2. Copy the webhook URL into `DISCORD_WEBHOOK_URL`.
+3. Optionally, create a second webhook in another channel and set it as `DISCORD_NOTIFY_WEBHOOK_URL`. Join notices and alerts then go there, and relays stay in the first channel.
 
-Slash commands are registered to that one server on startup. `/reload`, `/reconnect` and `/browser` require *Manage Server* by default. You can change that under Server Settings > Integrations, or restrict it further with the `DISCORD_*_IDS` allowlists. Relayed text never triggers pings (`@everyone`, roles, or users).
+Relayed text is shown literally: Markdown is escaped, links still work, and mentions (`@everyone`, roles, users) never ping. The webhook token is redacted from logs.
 
 ## Deployment (Docker / Podman)
 
@@ -69,7 +73,7 @@ docker compose logs -f
 **Recovery:**
 - Short disconnects are handled by reloading, with growing waits between attempts.
 - After `CHATZY_MAX_AUTO_RETRIES` failures, the bot stops retrying, alerts Discord, and waits for you.
-- `/reconnect` resets the retry counter.
+- To retry from scratch, reload the page through noVNC or restart the container (`docker compose restart`).
 - Waiting for an operator does not make the container unhealthy, so Docker will not restart-loop.
 
 **Stopping:** `docker compose stop` gives the bot 30s to send `/bye` and close the browser.
@@ -77,4 +81,5 @@ docker compose logs -f
 ## Security
 
 - Never commit `.env`, `data/`, HAR files or WebSocket captures. They contain Chatzy session tokens and are listed in `.gitignore`.
-- Secrets (Discord token, room password, VNC password) are redacted from logs.
+- Secrets (webhook token, room password, VNC password) are redacted from logs.
+- If the webhook URL leaks, delete or regenerate it in the channel's *Integrations* settings.

@@ -47,7 +47,9 @@ export function createHandlers(
       void outlet.notifyJoin(user);
     },
     onStateChange(state, prev, reason) {
-      const browser = opts.novncUrl ? ` Open the browser: ${opts.novncUrl}` : " Use /browser for manual control.";
+      const browser = opts.novncUrl
+        ? ` Open the browser: ${opts.novncUrl}`
+        : " Open noVNC (port 6080) on the bot server to take control.";
       if (state === "connected") {
         void outlet.notify(everConnected ? "Chatzy connection restored." : "Chatzy bot is connected to the room.");
         everConnected = true;

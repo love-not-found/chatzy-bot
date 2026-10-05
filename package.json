@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "discord.js": "14.27.0",
     "playwright": "1.63.0",
     "zod": "4.6.5"
   },

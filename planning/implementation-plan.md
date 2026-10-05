@@ -2,18 +2,19 @@
 
 ## 1. Goal
 
-Build a self-hosted TypeScript bot that stays connected to a private Chatzy room through a real Chromium browser and integrates the room with Discord.
+Build a self-hosted TypeScript bot that stays connected to a private Chatzy room through a real Chromium browser and posts selected room activity to Discord.
 
 The first release will:
 
 - Run continuously in a Docker container on an x86_64 home server.
 - Join a password-protected Chatzy Premium Room.
 - Let an operator manually control the browser when Chatzy, VPN detection, login, or password entry requires human interaction.
-- Notify a configured Discord channel when someone joins the Chatzy room.
-- Relay messages only when explicitly requested with `!relay` in Chatzy or `/relay` in Discord.
+- Notify a Discord channel when someone joins the Chatzy room.
+- Relay messages to Discord only when explicitly requested with `!relay` in Chatzy.
 - Run Chatzy-side `!` commands, beginning with `!joke` and `!help`.
-- Expose normal Discord slash commands for status and administration.
 - Recover from dropped connections without creating duplicate messages or notifications.
+
+**Decision (revised): Discord integration is a one-way webhook (Chatzy → Discord).** There is no Discord bot account, no Discord gateway connection, and no slash commands. Nothing typed in Discord reaches Chatzy. All bot interaction happens in Chatzy through `!` commands. Browser administration (reload, password entry) happens through noVNC or by restarting the container.
 
 Automatic full-room mirroring is deliberately out of scope. Nothing is relayed unless a user invokes the relay command.
 
@@ -27,28 +28,25 @@ Chatzy users invoke bot commands in the room with an exclamation mark:
 - `!joke` posts one joke selected from a local list back into Chatzy.
 - `!relay <message>` posts `<message>` to the configured Discord relay channel.
 
-The relayed Discord message should identify its origin clearly, for example:
+The relayed Discord message identifies its origin through the webhook's per-message display name, for example:
 
 ```text
-[Chatzy] Amour (26): hello from the room
+Amour (26) (Chatzy)      <- webhook username
+hello from the room      <- escaped message text
 ```
 
 The command line itself should not be relayed. The bot cannot remove it from Chatzy, so users will see both their `!relay` command and the bot's resulting action.
 
 Future commands such as `!gif <query>` can use the same command registry, but external GIF APIs are not part of the first release.
 
-### 2.2 Discord commands
+### 2.2 Discord output (webhook)
 
-Discord users invoke application slash commands:
+The bot posts to Discord through one or two incoming webhooks:
 
-- `/relay message:<text>` posts the text to Chatzy as `[Discord display name] <text>`.
-- `/status` reports browser, Chatzy, and Discord connection status and bot uptime.
-- `/who` lists users currently shown as online in Chatzy.
-- `/reload` reloads the current Chatzy browser page.
-- `/reconnect` starts a clean Chatzy reconnect attempt.
-- `/browser` returns instructions or the configured private URL for opening manual browser control.
+- `DISCORD_WEBHOOK_URL` receives `!relay` messages.
+- `DISCORD_NOTIFY_WEBHOOK_URL` (optional, defaults to the first) receives join notices and connection alerts: connected, connection lost/restored, needs manual attention, and missing page hooks.
 
-Administrative commands must be restricted to an allowlist of Discord role IDs and/or user IDs. `/relay` may use a separate allowlist if more users should be permitted to relay than administer the browser.
+Webhooks cannot receive anything, so Discord → Chatzy relaying and Discord-side commands are intentionally not supported. Status is exposed instead on the local health endpoint (`http://127.0.0.1:8080/`).
 
 ### 2.3 Join notifications
 
@@ -111,19 +109,16 @@ The Premium-room password form has still not been captured. Auto-join fills the 
 ## 5. Architecture
 
 ```text
-Discord Gateway
-      |
-      v
-Discord adapter ---- command/permission service
-      |                         |
-      v                         v
+           Discord channel(s)
+                  ^
+                  | HTTPS POST (one-way)
+           Discord webhook client
+                  ^
               Bot coordinator
-             /       |        \
-            v        v         v
-   relay service  command   notification
-                  registry      service
-            \        |         /
-             v       v        v
+             /               \
+     command registry    join/alert notices
+   (!help !joke !relay)
+             \               /
              Chatzy browser adapter
                       |
                  Playwright
@@ -136,7 +131,7 @@ Discord adapter ---- command/permission service
 Recommended runtime stack:
 
 - Bun as runtime, package manager, TypeScript executor, and test runner (`bun test`). No separate Node.js, npm, `tsc` build step, or Vitest is required; Bun runs `.ts` files directly.
-- `discord.js` v14 for the Discord gateway and slash commands.
+- Discord incoming webhooks over plain `fetch` (no Discord library). The client serializes posts, retries on HTTP 429 using `retry_after` and on 5xx with backoff, and always sends `allowed_mentions: { parse: [] }`.
 - Playwright for Chromium automation. The `playwright` npm package version is pinned exactly to the version of `playwright-driver` in the locked nixpkgs (currently 1.63.0) so the Nix-provided browsers are used in development.
 - A Nix flake (`flake.nix`) provides the development shell: Bun, Playwright browsers via `PLAYWRIGHT_BROWSERS_PATH`, Xvfb, and x11vnc. Enter it with `nix develop` (or direnv `use flake`).
 - Xvfb as Chromium's virtual display.
@@ -152,38 +147,25 @@ src/
   config.ts
   logger.ts
   coordinator.ts
+  text.ts              # Chatzy line sanitizing, Discord escaping
   chatzy/
-    browser.ts
-    session.ts
+    session.ts         # browser lifecycle, state machine, auto-join, recovery
+    page-scripts.ts    # code run inside the page (probe, observer, visitor list)
     selectors.ts
-    watcher.ts
     parser.ts
     sender.ts
     presence.ts
     types.ts
   commands/
     registry.ts
-    help.ts
-    joke.ts
-    relay.ts
+    builtin.ts         # !help !joke !relay
   discord/
-    client.ts
-    permissions.ts
-    register-commands.ts
-    commands/
-      relay.ts
-      status.ts
-      who.ts
-      reload.ts
-      reconnect.ts
-      browser.ts
-  relay/
-    service.ts
-    dedupe.ts
-  notifications/
-    joins.ts
+    webhook.ts         # webhook client
+    outlet.ts          # relay/notice formatting
   jokes/
     jokes.json
+  scripts/
+    console.ts         # Chatzy-only harness
 scripts/
   start-container.sh
 tests/
@@ -291,34 +273,15 @@ Initial command contracts:
 
 The jokes list should be local and reviewed rather than fetched from an external API. Avoid immediately repeating the same joke; remembering the last selected index is sufficient for the first release.
 
-### 8.2 Discord slash commands
-
-Register commands to one development guild first so updates appear immediately. Global registration can be enabled after behavior stabilizes.
-
-Each command must:
-
-- Check the invoking user's configured permission policy.
-- Defer the Discord response if browser interaction could take more than three seconds.
-- Return ephemeral errors for permission or operational failures.
-- Avoid exposing Chatzy passwords, cookies, or tokens in responses.
-
-### 8.3 Explicit relay behavior
-
-Chatzy to Discord:
+### 8.2 Explicit relay behavior (Chatzy → Discord only)
 
 1. A Chatzy user sends `!relay hello`.
 2. The watcher parses it as a command.
-3. The relay service sends `[Chatzy] <name>: hello` to the Discord relay channel.
+3. The webhook posts `hello` with username `<name> (Chatzy)`. Markdown is escaped except inside URLs, so links still work.
 4. The bot does not echo a success message into Chatzy unless delivery fails; this keeps room noise low.
+5. Lines authored by the bot's own alias never trigger commands, so loops are impossible.
 
-Discord to Chatzy:
-
-1. An authorized Discord user invokes `/relay message:hello`.
-2. The relay service sends `[<Discord display name>] hello` through the Chatzy sender queue.
-3. The Discord interaction receives an ephemeral success or failure response.
-4. The resulting Chatzy line is ignored as bot-originated input and cannot trigger another relay.
-
-Attachments are out of scope for the first release. A later version can append Discord CDN URLs after checking file type and size.
+Discord usernames containing `discord`/`clyde` or equal to `everyone`/`here` are rejected by Discord; the client alters them minimally so delivery still succeeds.
 
 ## 9. Connection State and Recovery
 
@@ -341,24 +304,19 @@ Recovery rules:
 - Stop automatic retries at a configurable threshold and enter `waiting_for_operator` so Chatzy is not hammered.
 - Notify Discord when operator action becomes necessary and when the session recovers.
 - Reset message and presence baselines after reconnecting so history is not reprocessed.
-- On SIGTERM, stop accepting commands, drain the sender briefly, send `/bye` or click Leave Room when connected, close Discord, and exit within Docker's stop timeout.
+- On SIGTERM, stop accepting commands, drain the sender briefly, send `/bye` or click Leave Room when connected, and exit within Docker's stop timeout.
 
 ## 10. Configuration
 
 Expected environment variables:
 
 ```dotenv
-DISCORD_TOKEN=
-DISCORD_APPLICATION_ID=
-DISCORD_GUILD_ID=
-DISCORD_RELAY_CHANNEL_ID=
-DISCORD_NOTIFICATION_CHANNEL_ID=
-DISCORD_ADMIN_ROLE_IDS=
-DISCORD_RELAY_ROLE_IDS=
+DISCORD_WEBHOOK_URL=
+DISCORD_NOTIFY_WEBHOOK_URL=
+DISCORD_WEBHOOK_NAME=Chatzy Bot
 
 CHATZY_ROOM_URL=
 CHATZY_ALIAS=Room Bot
-CHATZY_COLOR=000000
 CHATZY_PASSWORD=
 CHATZY_AUTO_JOIN=false
 
@@ -373,7 +331,7 @@ LOG_LEVEL=info
 
 Use the official `oven/bun` Debian image. Install Chromium and its system libraries with `bunx playwright@<pinned version> install --with-deps chromium` so the browser build matches the pinned package. Add only the Xvfb/VNC/noVNC components needed for the interactive display. Dependencies are installed with `bun install --frozen-lockfile --production` from the committed `bun.lock`.
 
-Bun compatibility note: Playwright and discord.js are both Node-targeted libraries. Bun's Node compatibility covers them, but Playwright launching Chromium under Bun is the riskiest part of the stack and is verified first in Phase 1. If a blocking incompatibility appears, the fallback is to keep Bun as package manager/test runner and run the bot entrypoint with Node; no application code needs to change for that.
+Bun compatibility note: Playwright is a Node-targeted library. Playwright launching Chromium under Bun was the riskiest part of the stack and was verified first in Phase 1; it works. If a blocking incompatibility appears, the fallback is to keep Bun as package manager/test runner and run the bot entrypoint with Node; no application code needs to change for that.
 
 The compose service should provide:
 
@@ -396,7 +354,7 @@ Run the application and browser as a non-root user. Avoid `--no-sandbox` unless 
 - Parse `!help`, `!joke`, and `!relay` including empty and mixed-case input.
 - Ensure bot-authored messages cannot trigger commands or relays.
 - Verify join deduplication and initial-presence suppression.
-- Verify Discord attribution and message-length handling.
+- Verify webhook payloads, mention suppression, Markdown escaping, 429/5xx retries, and message-length handling.
 
 Use sanitized copies of the supplied room HTML as fixtures.
 
@@ -413,13 +371,12 @@ Using the supplied test room and then the Premium room:
 
 1. Start the container and open noVNC.
 2. Manually enter credentials/password and join.
-3. Confirm `/status` reports connected.
+3. Confirm the health endpoint and the Discord "connected" notice report connected.
 4. Join from a second browser and confirm exactly one Discord notification.
 5. Send `!joke` and verify one joke appears in Chatzy.
 6. Send `!relay test from Chatzy` and verify one attributed Discord message.
-7. Run `/relay message:test from Discord` and verify one attributed Chatzy message.
-8. Reload manually and confirm the bot recovers without replaying old commands.
-9. Stop the container and confirm the bot leaves the room cleanly.
+7. Reload manually and confirm the bot recovers without replaying old commands.
+8. Stop the container and confirm the bot leaves the room cleanly.
 
 ## 13. Implementation Phases
 
@@ -431,7 +388,7 @@ Using the supplied test room and then the Premium room:
 - Launch persistent headed Chromium and verify manual control.
 - Implement page-state detection and selector validation.
 
-Exit criterion: the operator can open noVNC, join Chatzy manually, and `/status` can distinguish entry page, connected room, and disconnected states.
+Exit criterion: the operator can open noVNC, join Chatzy manually, and the session can distinguish entry page, connected room, and disconnected states.
 
 ### Phase 2: Chatzy adapter
 
@@ -444,27 +401,25 @@ Exit criterion: a local console harness reliably receives events and sends messa
 
 ### Phase 3: Discord integration
 
-- Connect `discord.js` and register guild slash commands.
-- Add permission checks.
-- Implement `/status`, `/who`, `/reload`, `/reconnect`, and `/browser`.
-- Post deduplicated join notifications.
+- Implement the webhook client (ordering, retries, mention suppression).
+- Post deduplicated join notifications and connection alerts.
 
-Exit criterion: a Chatzy join causes exactly one Discord notice and administrative commands accurately control/report the browser.
+Exit criterion: a Chatzy join causes exactly one Discord notice. (Done and verified against the real webhook.)
 
 ### Phase 4: Commands and explicit relay
 
 - Add the Chatzy command registry.
 - Add the curated joke list, `!help`, and `!joke`.
-- Implement Chatzy `!relay` and Discord `/relay`.
+- Implement Chatzy `!relay` to the Discord webhook.
 - Add sender-origin and relay-loop protection.
 
-Exit criterion: both relay directions work only through explicit commands, and no action loops or processes historical commands.
+Exit criterion: relaying works only through the explicit command, and nothing loops or processes historical commands.
 
 ### Phase 5: Hardening and deployment
 
 - Add structured redacted logging and health checks.
 - Run unit, fixture-browser, container, disconnect, and shutdown tests.
-- Document server deployment, backups, upgrades, noVNC protection, and Discord bot setup.
+- Document server deployment, backups, upgrades, noVNC protection, and Discord webhook setup.
 - Validate behavior against the password-protected Premium room.
 
 Exit criterion: the service survives browser/network interruption, requests operator help when necessary, and restarts with its browser profile intact.
@@ -472,8 +427,8 @@ Exit criterion: the service survives browser/network interruption, requests oper
 ## 14. Security and Privacy Notes
 
 - The supplied WebSocket capture contains Chatzy account/session credentials and is ignored by Git. The existing token should still be invalidated by logging out of Chatzy.
-- Never commit `.env`, browser profiles, HAR files, WebSocket captures, or Discord tokens.
-- Treat relayed room messages as potentially private. Restrict the Discord channels and bot permissions accordingly.
+- Never commit `.env`, browser profiles, HAR files, WebSocket captures, or Discord webhook URLs. A webhook URL lets anyone post to its channel; regenerate it if it leaks.
+- Treat relayed room messages as potentially private. Restrict who can read the Discord channels accordingly.
 - Escape Discord mentions from Chatzy text by default so a Chatzy user cannot trigger `@everyone`, role, or user pings through `!relay`.
 - Treat Chatzy text as untrusted input. Do not evaluate it as code or interpolate it into shell commands.
 - Rate-limit `!joke` and `!relay` per user and globally to prevent abuse.
@@ -482,7 +437,8 @@ Exit criterion: the service survives browser/network interruption, requests oper
 ## 15. Deferred Features
 
 - GIF and image search commands.
-- Discord attachment relaying.
+- Chatzy-side status commands (e.g. `!who`, `!status`) to replace the dropped Discord slash commands, if wanted.
+- Two-way relaying (would require a Discord bot account instead of a webhook).
 - Automatic or rule-based message mirroring.
 - Searchable message history and persistent analytics.
 - Leave notifications.

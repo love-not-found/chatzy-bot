@@ -1,38 +1,30 @@
 import { ChatzySession } from "./chatzy/session.ts";
 import { loadChatzyConfig, loadDiscordConfig } from "./config.ts";
-import { createHandlers, type Outlet } from "./coordinator.ts";
-import { DiscordBot } from "./discord/bot.ts";
+import { createHandlers } from "./coordinator.ts";
+import { createWebhookOutlet } from "./discord/outlet.ts";
 import { createLogger, registerSecret, setLogLevel } from "./logger.ts";
 
 const log = createLogger("main");
+
+/** The token is the last path segment of a webhook URL. */
+function webhookToken(url: string): string | undefined {
+  return url.split("/").pop();
+}
 
 async function main(): Promise<void> {
   const chatzyConfig = loadChatzyConfig();
   const discordConfig = loadDiscordConfig();
   setLogLevel(chatzyConfig.logLevel);
-  registerSecret(discordConfig.token);
+  registerSecret(webhookToken(discordConfig.relayWebhookUrl));
+  registerSecret(webhookToken(discordConfig.notifyWebhookUrl));
   registerSecret(chatzyConfig.password);
   registerSecret(process.env.VNC_PASSWORD);
 
-  let discord: DiscordBot | null = null;
-  const outlet: Outlet = {
-    relayFromChatzy: (user, text) => discord!.postRelay(user, text),
-    notifyJoin: async (user) => discord?.notifyJoin(user),
-    notify: async (text) => discord?.notify(text),
-  };
-
+  const outlet = createWebhookOutlet(discordConfig);
   const session: ChatzySession = new ChatzySession(
     chatzyConfig,
     createHandlers(() => session, outlet, { novncUrl: chatzyConfig.novncUrl }),
   );
-
-  discord = new DiscordBot(discordConfig, {
-    status: () => session.status(),
-    send: (t) => session.send(t),
-    reload: () => session.reload(),
-    reconnect: () => session.reconnect(),
-    novncUrl: chatzyConfig.novncUrl,
-  });
 
   const health = Bun.serve({
     hostname: "127.0.0.1",
@@ -43,7 +35,7 @@ async function main(): Promise<void> {
       // an operator is a normal state and must not trigger a container restart.
       const stuck = Date.now() - s.lastTickAt > 60_000;
       return Response.json(
-        { ok: !stuck, chatzy: s.state, page: s.pageKind, discord: discord?.ready ?? false },
+        { ok: !stuck, chatzy: s.state, page: s.pageKind, online: s.online.length, discord: outlet.status() },
         { status: stuck ? 503 : 200 },
       );
     },
@@ -57,7 +49,6 @@ async function main(): Promise<void> {
     const force = setTimeout(() => process.exit(1), 25_000);
     try {
       await session.stop();
-      await discord?.stop();
       await health.stop(true);
     } catch (e) {
       log.error("error during shutdown", { error: e });
@@ -68,7 +59,6 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
-  await discord.start();
   await session.start();
   log.info("bot running", { health: `http://127.0.0.1:${chatzyConfig.healthPort}/` });
 }
