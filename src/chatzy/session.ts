@@ -279,6 +279,10 @@ export class ChatzySession {
           .catch(() => false);
         if (!ok) return;
         log.info("message observer installed", { alias: this.selfAlias });
+        // A fresh page load/room entry counts as Chatzy activity. Do NOT reschedule
+        // on status-only reconnects: Chatzy's status blinks "Disconnected" every
+        // ~2 minutes, which previously postponed the keep-alive forever.
+        this.scheduleKeepalive(now);
         this.joins.reset();
         this.lastPresenceAt = 0;
         const missing = optionalInRoom.filter((k) => !probe.found[k]);
@@ -295,7 +299,6 @@ export class ChatzySession {
         this.everConnected = true;
         this.failures = 0;
         this.connectedSince = now;
-        this.scheduleKeepalive(now);
         this.setState("connected");
       }
       if (probe.awayPromptVisible) await this.dismissAwayPrompt(page);
