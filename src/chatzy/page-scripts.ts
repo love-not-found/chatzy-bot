@@ -27,6 +27,21 @@ export function probePage(sel: SelectorMap): PageProbe {
   const alias = q(sel.ownAlias);
   const w = window as unknown as { __chatzyBot?: { log: Element } };
   const log = q(sel.messageLog);
+  // Dialogs may be position:fixed, so check rendered boxes rather than offsetParent.
+  const visible = (list: readonly string[]): boolean => {
+    for (const s of list) {
+      let els: NodeListOf<Element>;
+      try {
+        els = document.querySelectorAll(s);
+      } catch {
+        continue;
+      }
+      for (const el of Array.from(els)) {
+        if (el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden") return true;
+      }
+    }
+    return false;
+  };
   return {
     url: location.href,
     title: document.title,
@@ -34,6 +49,9 @@ export function probePage(sel: SelectorMap): PageProbe {
     statusText: status ? (status.textContent ?? "").trim() : null,
     ownAlias: alias ? (alias.textContent ?? "").trim() || null : null,
     observerInstalled: !!w.__chatzyBot && w.__chatzyBot.log.isConnected && w.__chatzyBot.log === log,
+    awayPromptVisible: visible(sel.awayPrompt),
+    // Only needed to diagnose unrecognised pages (shown out, blocked, error pages).
+    bodyText: log ? null : (document.body?.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 300),
   };
 }
 

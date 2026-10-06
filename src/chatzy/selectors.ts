@@ -23,6 +23,12 @@ export const selectors = {
   entryPassword: ['input[type="password"]'],
   /** Entry/join page form: alias text input, color select, submit button. */
   entryForm: ["#X8823", 'form:has(input[type="submit"]):has(input[type="text"])'],
+  /** Modal dialog container (inactivity prompt, My Messages, ...). */
+  dialog: ["#X6924"],
+  /** "I am here!" button of the "You seem to be away" inactivity prompt. */
+  awayPrompt: ['#X6924 input[type="button"][value="I am here!"]', 'input[type="button"][value="I am here!"]'],
+  /** "My Messages" menu entry: opening it counts as activity without posting to the room. */
+  myMessages: ["#X1705", 'a[title^="Review Personal Messages"]'],
 } as const;
 
 export type SelectorKey = keyof typeof selectors;

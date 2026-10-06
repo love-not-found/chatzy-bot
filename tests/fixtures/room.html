@@ -3,7 +3,13 @@
 <html>
   <head><title>Chatzy: test room</title></head>
   <body>
+    <a href="#" id="X1705" title="Review Personal Messages sent or received in this room"
+      onclick="window.__activity=(window.__activity||0)+1;var d=document.getElementById('X6924');d.innerHTML='<p>No Messages Found</p><input type=&quot;button&quot; value=&quot;Close&quot; onclick=&quot;this.parentNode.style.display=\'none\'&quot;>';d.style.display='block';return false;">My Messages</a>
     <a href="#" id="X7397" title="Leave the room with the predefined goodbye message (/bye)">Leave Room</a>
+    <div id="X6924" style="display: none; position: fixed; top: 100px; left: 300px">
+      <h2>You seem to be away</h2>
+      <input type="button" value="I am here!" onclick="window.__here=1;this.parentNode.style.display='none'" />
+    </div>
     <table>
       <tbody>
         <tr>

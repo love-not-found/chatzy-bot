@@ -32,6 +32,26 @@ test("probe classifies the fixture as a connected room", async () => {
   expect(p.found.leaveRoom).toBe(true);
 });
 
+test("inactivity prompt is detected only while visible and can be dismissed", async () => {
+  expect((await page.evaluate(probePage, selectors)).awayPromptVisible).toBe(false);
+  await page.evaluate(() => (document.getElementById("X6924")!.style.display = "block"));
+  const shown = await page.evaluate(probePage, selectors);
+  expect(shown.awayPromptVisible).toBe(true);
+  expect(classifyPage(shown)).toBe("room-connected");
+
+  await page.locator(`${selectors.awayPrompt.join(", ")} >> visible=true`).first().click();
+  expect(await page.evaluate(() => (window as any).__here)).toBe(1);
+  expect((await page.evaluate(probePage, selectors)).awayPromptVisible).toBe(false);
+});
+
+test("keep-alive selectors open and close My Messages", async () => {
+  await page.locator(selectors.myMessages.join(", ")).first().click();
+  const close = page.locator(`${selectors.dialog.join(", ")} input[type="button"] >> visible=true`).first();
+  await close.click();
+  expect(await page.evaluate(() => (window as any).__activity)).toBe(1);
+  expect(await page.locator(selectors.dialog.join(", ")).isVisible()).toBe(false);
+});
+
 test("visitor list", async () => {
   const entries = await page.evaluate(readVisitorList, selectors.visitorList);
   expect(onlineFromVisitorList(entries!)).toEqual(["Amour (26)"]);

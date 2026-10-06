@@ -7,6 +7,10 @@ Communication is **one-way, Chatzy → Discord**. Nothing from Discord reaches C
 - **Join notices**: new “joined the chat” system messages trigger Discord notices. Visitor-list changes do not trigger notifications.
 - **Explicit relay**: `!relay <text>` in Chatzy posts the text to Discord under the sender's Chatzy name. Nothing else is mirrored.
 - **Chatzy `!` commands**: `!help`, `!joke`, `!relay`.
+- **Stays active**: Chatzy asks "You seem to be away" after 60 minutes without activity and shows the user out 60 minutes later.
+  - Keep-alive: at a random interval of 10–25 minutes (`CHATZY_KEEPALIVE_*`), the bot silently opens and closes *My Messages*. Chatzy counts this as activity, and nothing is posted in the room.
+  - Prompt: if the prompt still appears, the bot clicks *I am here!*.
+  - Sent messages also count as activity and push the next keep-alive back.
 - **Connection alerts**: initial connection and persistent failures are posted to Discord. Brief interruptions recover silently; “restored” is posted only after an announced failure.
 - **Manual browser control**: the bot's Chromium is visible over noVNC, so you can type the room password, deal with VPN checks, or reload by hand. The bot pauses while it waits for you and resumes automatically once it is back in the room.
 

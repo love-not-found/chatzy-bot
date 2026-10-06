@@ -25,6 +25,10 @@ export interface PageProbe {
   statusText: string | null;
   ownAlias: string | null;
   observerInstalled: boolean;
+  /** Chatzy's "You seem to be away" inactivity prompt is on screen. */
+  awayPromptVisible: boolean;
+  /** Start of the visible page text when the room UI is absent, for diagnostics. */
+  bodyText: string | null;
 }
 
 export type PageKind = "room-connected" | "room-disconnected" | "entry" | "unknown";

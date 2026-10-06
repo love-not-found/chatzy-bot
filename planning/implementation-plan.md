@@ -304,6 +304,9 @@ Recovery rules:
 - Stop automatic retries at a configurable threshold and enter `waiting_for_operator` so Chatzy is not hammered.
 - Notify Discord only when the continuous outage window and retry budget are exhausted; send a recovery notice only if the failure was announced. Initial manual entry prompts immediately; missing credentials after a connection wait for the timeout without attempting guessed credentials.
 - Reset message and presence baselines after reconnecting so history is not reprocessed.
+- Inactivity: Chatzy shows "You seem to be away" after 60 minutes without activity (client-side check against its last-activity timestamp) and shows the user out 60 minutes later; this caused the first production outage (shown out exactly 2h after start). The bot opens and closes "My Messages" at a random 10–25 minute interval, which Chatzy counts as activity, and clicks "I am here!" if the prompt appears anyway. The prompt overlays the room without changing the connection status, so it is not treated as a disconnect.
+- Only the first recovery attempt reloads; later attempts open the room URL fresh, since a reload can keep re-showing an error or shown-out page. Unrecognised pages are logged with their title and start of text.
+- Do not test the shown-out path by tampering with Chatzy's client state: doing so triggered a Cloudflare block for that browser session.
 - On SIGTERM, stop accepting commands, drain the sender briefly, send `/bye` or click Leave Room when connected, and exit within Docker's stop timeout.
 
 ## 10. Configuration

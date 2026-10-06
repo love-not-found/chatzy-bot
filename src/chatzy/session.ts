@@ -6,6 +6,7 @@ import { createLogger } from "../logger.ts";
 import { classifyPage, onlineFromVisitorList, parseLine } from "./parser.ts";
 import { BINDING_NAME, installObserver, probePage, readVisitorList } from "./page-scripts.ts";
 import { JoinDetector } from "./presence.ts";
+import { nextKeepaliveDelay } from "./keepalive.ts";
 import { RecoveryWindow } from "./recovery.ts";
 import { optionalInRoom, selectors, type SelectorKey } from "./selectors.ts";
 import { SendQueue } from "./sender.ts";
@@ -75,6 +76,7 @@ export class ChatzySession {
   private timer: Timer | null = null;
   private stopping = false;
   private everConnected = false;
+  private nextKeepaliveAt = 0;
   private lock: Promise<unknown> = Promise.resolve();
 
   readonly joins: JoinDetector;
@@ -258,11 +260,15 @@ export class ChatzySession {
 
     const probe = await page.evaluate(probePage, selectors).catch(() => null);
     const kind: PageKind = probe ? classifyPage(probe) : "unknown";
-    if (kind !== this.pageKind) log.info("page kind", {
-      kind, statusText: probe?.statusText ?? null,
-      messageLogFound: probe?.found.messageLog ?? false,
-      messageInputFound: probe?.found.messageInput ?? false,
-    });
+    if (kind !== this.pageKind) {
+      log.info("page kind", {
+        kind,
+        statusText: probe?.statusText ?? null,
+        messageLogFound: probe?.found.messageLog ?? false,
+        messageInputFound: probe?.found.messageInput ?? false,
+        ...(kind === "unknown" ? { url: probe?.url, title: probe?.title, text: probe?.bodyText } : {}),
+      });
+    }
     this.pageKind = kind;
 
     if (kind === "room-connected" && probe) {
@@ -289,7 +295,12 @@ export class ChatzySession {
         this.everConnected = true;
         this.failures = 0;
         this.connectedSince = now;
+        this.scheduleKeepalive(now);
         this.setState("connected");
+      }
+      if (probe.awayPromptVisible) await this.dismissAwayPrompt(page);
+      else if (this.config.keepalive.enabled && now >= this.nextKeepaliveAt && this.sender.idle) {
+        await this.keepAlive(page);
       }
       if (now - this.lastPresenceAt >= PRESENCE_MS) await this.pollPresence(page);
       return;
@@ -326,11 +337,59 @@ export class ChatzySession {
 
     if (!this.recovery.takeRetry(now)) return;
     this.failures = this.recovery.attempts;
-    log.info("recovery attempt", { attempt: this.failures, maxRetries: this.config.maxAutoRetries, action: "reload room" });
-    this.setState("reconnecting", `page is ${kind}`);
     const sameRoom = !!probe && isChatzyUrl(probe.url) && roomPath(probe.url) === roomPath(this.config.roomUrl);
-    if (sameRoom) await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
+    // A plain reload can keep re-showing an error/shown-out page, so only the
+    // first attempt reloads; later attempts open the room URL fresh.
+    const reload = sameRoom && this.failures === 1;
+    log.info("recovery attempt", {
+      attempt: this.failures,
+      maxRetries: this.config.maxAutoRetries,
+      action: reload ? "reload room" : "open room url",
+    });
+    this.setState("reconnecting", `page is ${kind}`);
+    if (reload) await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
     else await this.navigate();
+  }
+
+  private scheduleKeepalive(now = Date.now()): void {
+    const { minMs, maxMs } = this.config.keepalive;
+    this.nextKeepaliveAt = now + nextKeepaliveDelay(minMs, maxMs);
+  }
+
+  /** Click "I am here!" on Chatzy's inactivity prompt. */
+  private async dismissAwayPrompt(page: Page): Promise<void> {
+    try {
+      await page.locator(`${css(selectors.awayPrompt)} >> visible=true`).first().click({ timeout: 5_000 });
+      log.info("dismissed inactivity prompt");
+      this.scheduleKeepalive();
+    } catch (e) {
+      log.warn("could not dismiss inactivity prompt", { error: e });
+    }
+  }
+
+  /**
+   * Silent activity: open and close "My Messages". Chatzy counts menu actions
+   * as activity, and nothing is posted to the room.
+   */
+  private async keepAlive(page: Page): Promise<void> {
+    this.scheduleKeepalive();
+    try {
+      const link = page.locator(css(selectors.myMessages)).first();
+      if (!(await link.count())) {
+        log.warn("keep-alive skipped: My Messages link not found");
+        return;
+      }
+      await link.click({ timeout: 5_000 });
+      // Let the dialog finish loading, with a little human-like variation.
+      await page.waitForTimeout(1_500 + Math.round(Math.random() * 2_000));
+      const close = page.locator(`${css(selectors.dialog)} input[type="button"] >> visible=true`).first();
+      if (await close.count()) await close.click({ timeout: 5_000 });
+      else await page.keyboard.press("Escape");
+      log.info("keep-alive", { nextInMin: Math.round((this.nextKeepaliveAt - Date.now()) / 60_000) });
+    } catch (e) {
+      log.warn("keep-alive failed", { error: e });
+      await page.keyboard.press("Escape").catch(() => {});
+    }
   }
 
   /** Returns false if a password is required but not configured. */
@@ -389,5 +448,6 @@ export class ChatzySession {
     const input = this.page.locator(css(selectors.messageInput)).first();
     await input.fill(line, { timeout: 5_000 });
     await input.press("Enter", { timeout: 5_000 });
+    this.scheduleKeepalive(); // posting counts as activity
   }
 }

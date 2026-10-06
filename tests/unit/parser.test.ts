@@ -61,6 +61,8 @@ describe("classifyPage", () => {
     statusText,
     ownAlias: null,
     observerInstalled: false,
+    awayPromptVisible: false,
+    bodyText: null,
   });
 
   test("connected room", () => {
@@ -78,6 +80,10 @@ describe("classifyPage", () => {
   test("entry page", () => {
     expect(classifyPage(probe({ entryPassword: true }, null))).toBe("entry");
     expect(classifyPage(probe({ entryForm: true }, null))).toBe("entry");
+  });
+  test("inactivity prompt does not count as disconnected", () => {
+    const p = { ...probe({ messageLog: true, messageInput: true }, "Connected"), awayPromptVisible: true };
+    expect(classifyPage(p)).toBe("room-connected");
   });
   test("anything else", () => {
     expect(classifyPage(probe({}, null))).toBe("unknown");

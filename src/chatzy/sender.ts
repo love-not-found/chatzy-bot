@@ -26,6 +26,11 @@ export class SendQueue {
     return this.jobs.length;
   }
 
+  /** True when nothing is queued or being typed. */
+  get idle(): boolean {
+    return !this.running && this.jobs.length === 0;
+  }
+
   /** Queue user-visible text. Long text is split; resolves when all parts are sent. */
   async send(text: string): Promise<void> {
     const line = toChatzyLine(text);

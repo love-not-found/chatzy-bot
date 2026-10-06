@@ -28,6 +28,10 @@ const chatzySchema = z.object({
   CHATZY_SEND_INTERVAL_MS: int(1200),
   CHATZY_MAX_AUTO_RETRIES: int(5),
   CHATZY_RECOVERY_TIMEOUT_MS: int(120_000).pipe(z.number().positive()),
+  CHATZY_KEEPALIVE: bool(true),
+  // Chatzy's inactivity prompt appears after 60 minutes; stay well below it.
+  CHATZY_KEEPALIVE_MIN_MS: int(10 * 60_000).pipe(z.number().min(60_000, "must be at least 60000")),
+  CHATZY_KEEPALIVE_MAX_MS: int(25 * 60_000).pipe(z.number().max(50 * 60_000, "must stay below Chatzy's 60-minute limit")),
   DATA_DIR: z.string().default("./data"),
   NOVNC_PUBLIC_URL: optionalString,
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -52,6 +56,7 @@ export interface ChatzyConfig {
   sendIntervalMs: number;
   maxAutoRetries: number;
   recoveryTimeoutMs: number;
+  keepalive: { enabled: boolean; minMs: number; maxMs: number };
   dataDir: string;
   profileDir: string;
   novncUrl?: string;
@@ -86,6 +91,7 @@ export function loadChatzyConfig(env: Record<string, string | undefined> = proce
     sendIntervalMs: e.CHATZY_SEND_INTERVAL_MS,
     maxAutoRetries: e.CHATZY_MAX_AUTO_RETRIES,
     recoveryTimeoutMs: e.CHATZY_RECOVERY_TIMEOUT_MS,
+    keepalive: { enabled: e.CHATZY_KEEPALIVE, minMs: e.CHATZY_KEEPALIVE_MIN_MS, maxMs: e.CHATZY_KEEPALIVE_MAX_MS },
     dataDir,
     profileDir: path.join(dataDir, "browser-profile"),
     novncUrl: e.NOVNC_PUBLIC_URL,
