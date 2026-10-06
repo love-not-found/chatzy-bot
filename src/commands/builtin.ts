@@ -1,5 +1,6 @@
 import jokes from "../jokes/jokes.json" with { type: "json" };
 import type { ChatzyCommand, CommandRegistry } from "./registry.ts";
+import { createRandomPicker } from "./random-selector.ts";
 
 export function helpCommand(registry: CommandRegistry): ChatzyCommand {
   return {
@@ -13,15 +14,9 @@ export function helpCommand(registry: CommandRegistry): ChatzyCommand {
   };
 }
 
-export function createJokePicker(list: string[] = jokes, random = Math.random): () => string {
-  let last = -1;
-  return () => {
-    if (list.length === 0) return "I'm all out of jokes.";
-    let i = Math.floor(random() * list.length);
-    if (list.length > 1 && i === last) i = (i + 1) % list.length;
-    last = i;
-    return list[i]!;
-  };
+export function createJokePicker(source: string[] | (() => string[]) = jokes, random = Math.random): () => string {
+  const pick = createRandomPicker(typeof source === "function" ? source : () => source, random);
+  return () => pick() ?? "I'm all out of jokes.";
 }
 
 export function jokeCommand(pick = createJokePicker()): ChatzyCommand {

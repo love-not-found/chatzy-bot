@@ -38,20 +38,22 @@ export class CommandRegistry {
   private commands = new Map<string, ChatzyCommand>();
   private lastUse = new Map<string, number>();
 
+  constructor(readonly prefix = "!", private readonly additional: () => ChatzyCommand[] = () => []) {}
+
   register(cmd: ChatzyCommand): this {
     this.commands.set(cmd.name, cmd);
     return this;
   }
 
   list(): ChatzyCommand[] {
-    return [...this.commands.values()];
+    return [...this.commands.values(), ...this.additional()];
   }
 
   /** Returns true if the text was a known command (handled or rate-limited). */
   async dispatch(user: string, text: string, reply: (t: string) => Promise<void>, now = Date.now()): Promise<boolean> {
-    const parsed = parseCommand(text);
+    const parsed = parseCommand(text, this.prefix);
     if (!parsed) return false;
-    const cmd = this.commands.get(parsed.name);
+    const cmd = this.list().find((command) => command.name === parsed.name);
     if (!cmd) return false;
 
     const key = `${user}\u0000${cmd.name}`;
@@ -67,7 +69,7 @@ export class CommandRegistry {
       await cmd.run({ user, args: parsed.args, reply });
     } catch (e) {
       log.error("command failed", { cmd: cmd.name, error: e });
-      await reply(`Sorry, !${cmd.name} failed.`).catch(() => {});
+      await reply(`Sorry, ${this.prefix}${cmd.name} failed.`).catch(() => {});
     }
     return true;
   }

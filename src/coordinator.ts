@@ -1,5 +1,7 @@
-import { helpCommand, jokeCommand, relayCommand } from "./commands/builtin.ts";
+import { helpCommand, relayCommand } from "./commands/builtin.ts";
 import { CommandRegistry } from "./commands/registry.ts";
+import { randomSelectorCommands, type RandomSelector } from "./commands/random-selector.ts";
+import defaultJokes from "./jokes/jokes.json";
 import type { SessionHandlers } from "./chatzy/session.ts";
 import type { ChatzyEvent } from "./chatzy/types.ts";
 import { createLogger } from "./logger.ts";
@@ -18,11 +20,20 @@ export interface ChatzySide {
   send(text: string): Promise<void>;
 }
 
-export function buildRegistry(outlet: Outlet): CommandRegistry {
-  const registry = new CommandRegistry();
-  registry.register(helpCommand(registry));
-  registry.register(jokeCommand());
-  registry.register(relayCommand((user, text) => outlet.relayFromChatzy(user, text)));
+export function buildRegistry(outlet: Outlet, env: Record<string, string> = {}, commands?: () => RandomSelector[]): CommandRegistry {
+  const prefix = env.COMMAND_PREFIX ?? "!";
+  // The console harness retains a default joke command without a SettingsStore.
+  const defaults: RandomSelector[] = [{ id: "joke", category: "random-selector", name: "joke", description: "tell a joke", enabled: env.COMMAND_JOKE !== "false", cooldownMs: Number(env.JOKE_COOLDOWN_MS ?? 5000), avoidRepeats: true, values: [...defaultJokes] }];
+  const registry = new CommandRegistry(prefix, randomSelectorCommands(commands ?? (() => defaults), prefix));
+  const help = helpCommand(registry);
+  const relay = relayCommand((user, text) => outlet.relayFromChatzy(user, text));
+  relay.cooldownMs = Number(env.RELAY_COOLDOWN_MS ?? 10000);
+  const runRelay = relay.run;
+  relay.run = (ctx) => ctx.args ? runRelay(ctx) : ctx.reply(`Usage: ${prefix}relay <message>`);
+  for (const cmd of [help, relay]) {
+    cmd.usage = cmd.usage.replace(/^!/, prefix);
+    if (env[`COMMAND_${cmd.name.toUpperCase()}`] !== "false") registry.register(cmd);
+  }
   return registry;
 }
 
@@ -30,9 +41,9 @@ export function buildRegistry(outlet: Outlet): CommandRegistry {
 export function createHandlers(
   getChatzy: () => ChatzySide,
   outlet: Outlet,
-  opts: { novncUrl?: string } = {},
+  opts: { novncUrl?: string; env?: Record<string, string>; commands?: () => RandomSelector[] } = {},
 ): SessionHandlers {
-  const registry = buildRegistry(outlet);
+  const registry = buildRegistry(outlet, opts.env, opts.commands);
   let everConnected = false;
   let outageAnnounced = false;
 
@@ -45,9 +56,10 @@ export function createHandlers(
       registry.dispatch(ev.user, ev.text, reply).catch((e) => log.error("dispatch failed", { error: e }));
     },
     onJoin(user) {
-      void outlet.notifyJoin(user);
+      if (opts.env?.NOTIFY_JOINS !== "false") void outlet.notifyJoin(user);
     },
     onStateChange(state, _prev, reason) {
+      if (opts.env?.NOTIFY_CONNECTION === "false") return;
       const browser = opts.novncUrl
         ? ` Open the browser: ${opts.novncUrl}`
         : " Open noVNC (port 6080) on the bot server to take control.";
@@ -63,6 +75,7 @@ export function createHandlers(
       }
     },
     onSelectorWarning(missing) {
+      if (opts.env?.NOTIFY_CONNECTION === "false") return;
       void outlet.notify(
         `Some Chatzy page hooks were not found (${missing.join(", ")}). Chatzy may have changed its page; some features may not work.`,
       );
