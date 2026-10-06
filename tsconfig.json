@@ -7,6 +7,8 @@
     "moduleDetection": "force",
     "types": ["bun"],
     "resolveJsonModule": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
 
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -19,5 +21,5 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true
   },
-  "include": ["src", "tests", "scripts"]
+  "include": ["src", "tests", "scripts", "web/src", "web/vite.config.ts"]
 }
