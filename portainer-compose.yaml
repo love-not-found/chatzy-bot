@@ -28,8 +28,8 @@ services:
       WEBUI_PASSWORD: "${WEBUI_PASSWORD:-}"
       HEALTH_PORT: "8080"
     volumes:
-      - browser-data:/data
-      # Create this directory on the Docker host, writable by uid 1000.
+      # Create these directories on the Docker host, writable by uid 1000.
+      - "${DATA_PATH:-/opt/chatzy-bot/data}:/data"
       - "${CONFIG_PATH:-/opt/chatzy-bot/config}:/config"
     ports:
       # Set NOVNC_BIND to the Docker host's LAN/VPN IP for remote access.
@@ -43,6 +43,3 @@ services:
       start_period: 90s
       retries: 3
     stop_grace_period: 30s
-
-volumes:
-  browser-data:

@@ -153,7 +153,7 @@ Use [`portainer-compose.yaml`](portainer-compose.yaml) for a **Docker Standalone
 3. Set `DISCORD_WEBHOOK_URL` and `CHATZY_ROOM_URL`. For browser access, also set `VNC_PASSWORD`, `NOVNC_BIND` to the Docker host's LAN/VPN IP, and `NOVNC_PUBLIC_URL` to `http://<that-ip>:6080/vnc.html`.
 4. Deploy the stack. If the GHCR image is private, configure GHCR credentials in Portainer's **Registries** first.
 
-Set `CONFIG_PATH` to an absolute host directory (e.g. `/opt/chatzy-bot/config`) and `WEBUI_BIND` to your desired host interface. The stack bind-mounts that directory at `/config` and exposes the UI on port 3000. The existing `/data` named volume remains available for migration; new browser profiles live under `/config/browser-profile`. `HEALTH_PORT` remains fixed at `8080`. To refresh the image, use Portainer's stack update with the option to re-pull the image enabled.
+Set `CONFIG_PATH` and `DATA_PATH` to absolute host directories (e.g. `/opt/chatzy-bot/config` and `/opt/chatzy-bot/data`) and `WEBUI_BIND` to your desired host interface. The stack bind-mounts those directories at `/config` and `/data` and exposes the UI on port 3000. New browser profiles live under `/config/browser-profile`. If upgrading from the earlier named `browser-data` volume, copy any legacy data you want to retain into the host directory before switching the mount; changing the mount does not transfer existing files. `HEALTH_PORT` remains fixed at `8080`. To refresh the image, use Portainer's stack update with the option to re-pull the image enabled.
 
 ## Security
 
