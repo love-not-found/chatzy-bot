@@ -37,6 +37,7 @@ export interface SessionStatus {
   failures: number;
   pageKind: PageKind | null;
   lastTickAt: number;
+  nextKeepaliveAt: number | null;
 }
 
 const css = (list: readonly string[]) => list.join(", ");
@@ -106,6 +107,7 @@ export class ChatzySession {
       failures: this.failures,
       pageKind: this.pageKind,
       lastTickAt: this.lastTickAt,
+      nextKeepaliveAt: this.state === "connected" && this.config.keepalive.enabled ? this.nextKeepaliveAt : null,
     };
   }
 

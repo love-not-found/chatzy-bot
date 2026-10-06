@@ -3,6 +3,7 @@
 !.env.example
 
 data/
+config/
 node_modules/
 dist/
 coverage/
