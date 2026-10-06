@@ -3,6 +3,8 @@
 .env.*
 node_modules
 data
+config
+web/dist
 planning
 tests
 coverage

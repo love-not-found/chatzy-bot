@@ -9,12 +9,16 @@ services:
     env_file: .env
     environment:
       DATA_DIR: /data
+      CONFIG_DIR: /config
     volumes:
-      # Browser profile (cookies/login) survives restarts. Must be writable by uid 1000.
+      # Legacy browser data retained for migration to /config/browser-profile.
       - ./data:/data
+      # Persistent settings, custom commands, and browser profile (uid 1000).
+      - "${CONFIG_PATH:-./config}:/config"
     ports:
       # noVNC for manual browser control. Keep it private: LAN/VPN address or 127.0.0.1 + SSH tunnel.
       - "${NOVNC_BIND:-127.0.0.1}:6080:6080"
+      - "${WEBUI_BIND:-127.0.0.1}:3000:3000"
     shm_size: 1gb
     # Duplicated from the Dockerfile because Podman's OCI image format drops HEALTHCHECK.
     healthcheck:

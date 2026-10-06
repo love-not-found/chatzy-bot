@@ -1,5 +1,11 @@
 # Chatzy Discord Bot Implementation Plan
 
+## Web UI and configuration extension
+
+The bot now includes a lightweight SolidJS control room on port 3000, served as static Vite-built assets by Bun. General settings persist in `/config/settings.json` and random-selector definitions/responses in `/config/commands.json`; the browser profile also lives under `/config/browser-profile`. Mount `/path/to/config:/config` (writable by UID 1000). Environment values seed only the first run, and persisted configuration takes precedence afterward.
+
+The UI provides live status and next keep-alive time, a VNC link, reload/reconnect actions, room/webhook/recovery/keep-alive settings, notification toggles, command prefix/enabled-command/cooldown settings, logging, and a custom-command editor. The **Random selector** category supports one response per line (text, jokes, image URLs), with name, description, enabled state, per-user cooldown, and immediate-repeat prevention. `joke` is a default selector; `jenna` or any other name can be created with the same mechanism. Save/apply restarts the bot session; selector edits are available immediately through the live command registry. Existing jokes migrate once from `jokes.json`, preserving their enabled state/cooldown and keeping the old file untouched. Built-in `help` and `relay` names are reserved; enabled selectors appear in help. VNC password changes take effect on container restart. Network bindings and the optional Web UI password remain deployment environment settings. Secrets are masked in API responses, and omitted secret fields preserve saved values. API writes require same-origin JSON requests. The UI can run in first-time setup mode without a configured room or webhook.
+
 ## 1. Goal
 
 Build a self-hosted TypeScript bot that stays connected to a private Chatzy room through a real Chromium browser and posts selected room activity to Discord.
@@ -266,12 +272,13 @@ Initial command contracts:
 | Command | Result |
 | --- | --- |
 | `!help` | Posts a concise list of available commands |
-| `!joke` | Posts one random joke from the local curated JSON file |
+| `!joke` | Default random selector, initially populated from the curated joke list and editable in the UI |
+| `!<custom_name>` | Selects one line from that command's saved responses and sends it into Chatzy |
 | `!relay <message>` | Sends the message to Discord, attributed to the Chatzy user |
 
 `!relay` without text should post a short usage response in Chatzy. Commands from the bot's own exact alias are ignored to prevent loops.
 
-The jokes list should be local and reviewed rather than fetched from an external API. Avoid immediately repeating the same joke; remembering the last selected index is sufficient for the first release.
+Random-selector lists are saved locally and require no external API. The shared picker excludes the previous response value when alternatives exist and repeat prevention is enabled. This applies equally to joke text and image links.
 
 ### 8.2 Explicit relay behavior (Chatzy → Discord only)
 

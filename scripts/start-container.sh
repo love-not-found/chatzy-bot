@@ -15,6 +15,8 @@ while [ ! -e "/tmp/.X11-unix/X${DISPLAY_NUM}" ]; do
   sleep 0.1
 done
 
+# Saved /config settings take precedence over the initial environment seed.
+VNC_PASSWORD=$(bun src/scripts/vnc-config.ts)
 if [ -n "${VNC_PASSWORD:-}" ]; then
   mkdir -p "$HOME/.vnc"
   x11vnc -storepasswd "$VNC_PASSWORD" "$HOME/.vnc/passwd" >/dev/null 2>&1
